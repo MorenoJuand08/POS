@@ -6,7 +6,7 @@ const RECOVERY_TOKENS_KEY = 'recovery_tokens'
 const DEFAULT_ROLE = 'Cajero'
 const VALID_ROLES = ['Administrador', 'Cajero']
 const USE_LOCAL_ONLY = import.meta.env.VITE_USE_LOCAL_ONLY === 'true'
-const FORCE_LOCAL_MODE = true  // 🔓 FORZAR MODO LOCAL SIEMPRE
+const FORCE_LOCAL_MODE = false  // 🔓 MODO LOCAL FORZADO DESACTIVADO (usar Supabase si está disponible)
 const RECOVERY_TOKEN_EXPIRY = 30 * 60 * 1000 // 30 minutos
 
 // --- AYUDANTES ---
@@ -132,6 +132,13 @@ export async function loginWithEmail(email, password) {
       if (error.message.includes("Email not confirmed")) {
         throw new Error("Debes confirmar tu correo electrónico antes de iniciar sesión.")
       }
+      // Mensaje amigable cuando las credenciales son inválidas
+      if (error.message.includes('Invalid login credentials')) {
+        if (import.meta.env.DEV) {
+          console.log('Inicio de sesión incorrecto')
+        }
+        throw new Error('Correo o contraseña incorrectos')
+      }
       throw error
     }
 
@@ -141,25 +148,32 @@ export async function loginWithEmail(email, password) {
     let employeeData = null
 
     try {
-        // Consultamos la tabla real en tu esquema personalizado
-        const { data: dbDataArray, error: dbError } = await supabase
-            .schema('public') // <--- IMPORTANTE: Esquema public
-            .from('employee')
-            .select('type_employee, first_name, last_name, second_name, second_last_name')
-            .eq('auth_user_id', rawUser.id)
+      // Consultamos la tabla real en tu esquema personalizado
+      const { data: dbDataArray, error: dbError } = await supabase
+        .schema('public')
+        .from('employee')
+        .select('type_employee, first_name, last_name, second_name, second_last_name')
+        .eq('auth_user_id', rawUser.id)
         
-        if (dbError) {
-            console.warn("Error consultando tabla employee:", dbError)
-        } else if (dbDataArray && dbDataArray.length > 0) {
-            employeeData = dbDataArray[0]
-            typeEmployee = normalizeTypeEmployee(dbDataArray[0].type_employee)
-            console.log('✓ Datos de empleado obtenidos:', employeeData)
-        } else {
-            console.log('ℹ️ No hay registro en tabla employee para este usuario (se creará al sincronizar)')
+      if (dbError) {
+        if (import.meta.env.DEV) {
+          console.warn('⚠️ No se pudo leer tabla employee (Supabase):', dbError?.message || dbError)
         }
+      } else if (dbDataArray && dbDataArray.length > 0) {
+        employeeData = dbDataArray[0]
+        typeEmployee = normalizeTypeEmployee(dbDataArray[0].type_employee)
+        if (import.meta.env.DEV) {
+          console.log('✓ Datos de empleado obtenidos:', employeeData)
+        }
+      } else if (import.meta.env.DEV) {
+        console.log('ℹ️ No hay registro en tabla employee para este usuario (se creará al sincronizar)')
+      }
     } catch (err) {
-        console.warn("No se pudo sincronizar perfil de empleado:", err)
-    }    // C. Construir objeto de usuario unificado
+      if (import.meta.env.DEV) {
+        console.warn('⚠️ Error de red al consultar employee (usando solo metadata de usuario):', err?.message || err)
+      }
+    }
+    // C. Construir objeto de usuario unificado
     const user = {
       ...(rawUser || {}),
       email: rawUser?.email || trimmedEmail,
@@ -180,7 +194,7 @@ export async function loginWithEmail(email, password) {
   
   const store = getStore()
   const entry = store[trimmedEmail]
-  if (!entry) throw new Error('Usuario no encontrado (Modo Offline)')
+  if (!entry) throw new Error('Usuario no encontrado. Regístrate primero.')
   if (entry.password !== safePassword) throw new Error('Contraseña incorrecta')
   
   const user = {
@@ -228,6 +242,30 @@ export async function registerWithEmail(email, password, roleInput, names, extra
     // Blindaje 1: Limpiar sesión previa
     await supabase.auth.signOut()
 
+    // Validación previa: si tenemos documento, verificar si ya existe en tabla employee
+    if (docValue) {
+      try {
+        const { data: existingEmployees, error: employeeCheckError } = await supabase
+          .schema('public')
+          .from('employee')
+          .select('em_document')
+          .eq('em_document', String(docValue).trim())
+          .limit(1)
+
+        if (employeeCheckError) {
+          console.warn('⚠️ No se pudo verificar documento en employee antes del registro:', employeeCheckError)
+        } else if (existingEmployees && existingEmployees.length > 0) {
+          throw new Error('Ya existe un empleado registrado con este documento. Usa "Iniciar sesión" o cambia el documento.')
+        }
+      } catch (checkErr) {
+        // Si es un error de validación nuestro, relanzarlo; si es otro, solo loguear
+        if (checkErr?.message && checkErr.message.includes('Ya existe un empleado registrado')) {
+          throw checkErr
+        }
+        console.warn('⚠️ Error realizando validación previa de empleado (continuando con registro):', checkErr)
+      }
+    }
+
     // 1. Crear usuario con Metadata completa
     const { data, error } = await supabase.auth.signUp({
       email: trimmedEmail,
@@ -249,7 +287,22 @@ export async function registerWithEmail(email, password, roleInput, names, extra
       }
     })
 
-    if (error) throw error
+    if (error) {
+      const normalizedMessage = String(error.message || '').toLowerCase()
+
+      // Error típico cuando el trigger intenta insertar un empleado con PK duplicada (SQLSTATE 23505)
+      if (error.code === '23505' || normalizedMessage.includes('duplicate key value') || normalizedMessage.includes('already exists')) {
+        throw new Error('Ya existe un usuario o empleado con estos datos. Intenta iniciar sesión o usa otro correo/documento.')
+      }
+
+      // Mensaje genérico de Supabase para errores del trigger/BD
+      if (normalizedMessage.includes('database error saving new user')) {
+        throw new Error('Error interno al crear el usuario en la base de datos. Inténtalo de nuevo más tarde o revisa la configuración de Supabase.')
+      }
+
+      // Cualquier otro error se propaga tal cual para depuración
+      throw error
+    }
 
     // Blindaje 2: Cerrar sesión inmediatamente si se abrió
     // Esto previene entrar al software sin verificar email
@@ -330,7 +383,36 @@ export async function sendPasswordRecovery(email) {
   const trimmedEmail = String(email || '').trim().toLowerCase()
   if (!trimmedEmail) throw new Error('Correo electrónico requerido')
 
-  // 🔓 SIEMPRE usar modo local (FORCE_LOCAL_MODE está activo)
+  // --- MODO ONLINE (SUPABASE) ---
+  if (hasSupabaseAuth()) {
+    try {
+      const redirectTo = typeof window !== 'undefined' ? window.location.origin : undefined
+      const { data, error } = await supabase.auth.resetPasswordForEmail(trimmedEmail, { redirectTo })
+
+      if (error) {
+        const msg = String(error.message || '').toLowerCase()
+
+        // Mensaje más claro cuando el usuario no existe en Supabase
+        if (msg.includes('user not found')) {
+          throw new Error('No existe ninguna cuenta registrada con este correo.')
+        }
+
+        throw error
+      }
+
+      // Respuesta estándar: no confirmamos si el correo existe por seguridad
+      return {
+        success: true,
+        isLocal: false,
+        message: 'Si existe una cuenta con este correo, te hemos enviado un enlace para cambiar tu contraseña. Revisa tu bandeja de entrada y la carpeta de spam.'
+      }
+    } catch (err) {
+      console.error('❌ Error enviando correo de recuperación (Supabase):', err)
+      throw new Error(err?.message || 'No se pudo enviar el correo de recuperación. Inténtalo de nuevo más tarde.')
+    }
+  }
+
+  // --- MODO OFFLINE (FALLBACK LOCAL) ---
   console.log('🔐 Recuperación de contraseña en modo LOCAL')
   
   // Liberar hilo antes de acceder a localStorage
@@ -339,12 +421,12 @@ export async function sendPasswordRecovery(email) {
   // Modo offline: generar token local para recuperación
   const store = getStore()
   if (!store[trimmedEmail]) {
-    throw new Error('Usuario no encontrado en el sistema local')
+    throw new Error('Usuario no encontrado en el sistema local para recuperación offline.')
   }
   
   const token = createRecoveryToken(trimmedEmail)
   
-  console.log('✅ Token de recuperación generado:', token)
+  console.log('✅ Token de recuperación generado (local):', token)
   
   return { 
     success: true, 

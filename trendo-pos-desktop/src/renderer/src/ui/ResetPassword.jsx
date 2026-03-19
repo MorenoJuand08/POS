@@ -42,7 +42,16 @@ export default function ResetPassword({ onDone }) {
       try { window.history.replaceState({}, document.title, window.location.pathname + window.location.search) } catch {}
       setTimeout(() => onDone?.(), 1500)
     } catch (err) {
-      setError(err?.message || 'Error al actualizar la contraseña')
+      const raw = err?.message || 'Error al actualizar la contraseña'
+      const lower = String(raw).toLowerCase()
+
+      if (lower.includes('new password should be different from the old password')) {
+        setError('La nueva contraseña debe ser diferente a la contraseña actual.')
+      } else if (lower.includes('password should be at least')) {
+        setError('La contraseña debe tener al menos 6 caracteres.')
+      } else {
+        setError(raw)
+      }
     } finally {
       setLoading(false)
     }
