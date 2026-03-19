@@ -14,11 +14,12 @@ import { supabase } from '@/services/supabaseClient'
 import { syncAll, onConnectivityChange } from '@/services/sync'
 import { fillMissingBillSizes } from '@/services/db-migration'
 import ResetPassword from './ResetPassword'
+import { PreferencesManager } from '@/lib/preferences'
 
 
 export default function App() {
   const [user, setUser] = useState(null)
-  const [view, setView] = useState('login') // 'login' | 'menu' | 'inventory' | 'cash' | 'invoice-progress' | 'reset' | 'verified'
+  const [view, setView] = useState('boot') // 'boot' | 'login' | 'menu' | 'inventory' | 'cash' | 'invoice-progress' | 'reset' | 'verified'
   const [authMessage, setAuthMessage] = useState('')
   const [invoiceData, setInvoiceData] = useState(null) // Datos para InvoiceProgress
   
@@ -60,45 +61,21 @@ export default function App() {
     }
   }, [])
 
-  
+  // Guardar la última vista para restaurarla tras recarga
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (!user) return
+    if (view === 'boot') return
+    try {
+      window.localStorage.setItem('pref_last_view', view)
+    } catch {
+      // ignore
+    }
+  }, [view, user])
 
   useEffect(() => {
     async function boot() {
-      console.log('🚀 Boot iniciado - FORZANDO LOGIN')
-      console.log('Estado actual antes de limpiar:', { user, view })
-      
-      // SIEMPRE limpiar sesión anterior para forzar nuevo login
-      try {
-        if (typeof supabase?.auth?.signOut === 'function') {
-          await supabase.auth.signOut()
-          console.log('✅ Sesión Supabase limpiada')
-        }
-      } catch (e) {
-        console.warn('No se pudo cerrar sesión previa:', e)
-      }
-      
-      // SIEMPRE limpiar sesión local Y TODAS las claves de usuario
-      try {
-        if (typeof window !== 'undefined') {
-          // Limpiar específicamente mock_user
-          window.localStorage.removeItem('mock_user')
-          
-          // TAMBIÉN limpiar otras posibles claves de sesión
-          const keysToRemove = []
-          for (let i = 0; i < window.localStorage.length; i++) {
-            const key = window.localStorage.key(i)
-            if (key && (key.includes('user') || key.includes('session') || key.includes('auth') || key.includes('token'))) {
-              keysToRemove.push(key)
-            }
-          }
-          keysToRemove.forEach(key => window.localStorage.removeItem(key))
-          
-          console.log('✅ Sesión local limpiada (y claves relacionadas):', keysToRemove)
-          console.log('localStorage después de limpiar:', Object.keys(window.localStorage))
-        }
-      } catch (e) {
-        console.warn('No se pudo limpiar sesión local:', e)
-      }
+        console.log('🚀 Boot iniciado')
 
       // First: check URL for recovery / verification / error params and handle them before session check
       try {
@@ -163,25 +140,79 @@ export default function App() {
           }
         }
       } catch (e) { /* ignore */ }
-      
-      // 🔓 SIEMPRE mostrar login sin verificar sesión anterior
-      console.log('✅ Mostrando pantalla de login')
-      console.log('Estableciendo: user=null, view=login')
-      setUser(null)
-      setView('login')
-      console.log('✅ Boot completado - usuario debe ver Login')
-      console.log('Si ves el menu en lugar de Login, hay un problema en el renderizado o el estado está siendo modificado después de boot()')
-      
-      // subscribe to auth changes - DESACTIVADO en modo local para forzar login
-      // El listener causaba que se restauraran sesiones previas
+
+      // Restaurar sesión existente respetando la configuración de auto-logout
       try {
-        if (typeof supabase?.auth?.onAuthStateChange === 'function') {
-          // NO activar el listener en modo local
-          // supabase.auth.onAuthStateChange(...)
+        const prefs = PreferencesManager.getAll()
+        const autoLogoutEnabled = prefs.autoLogoutEnabled
+        const sessionTimeout = prefs.sessionTimeout || 30
+        const timeoutMs = sessionTimeout * 60_000
+
+        let lastActivity = 0
+        if (typeof window !== 'undefined') {
+          const rawLast = window.localStorage.getItem('pref_last_activity_at')
+          if (rawLast) lastActivity = parseInt(rawLast, 10) || 0
+        }
+
+        if (autoLogoutEnabled && lastActivity > 0 && Date.now() - lastActivity > timeoutMs) {
+          console.log('⏰ Sesión expirada por inactividad según preferencias')
+          await handleLogout()
+          return
+        }
+
+        let existingUser = null
+
+        // Intentar restaurar sesión de Supabase (modo online)
+        try {
+          if (typeof supabase?.auth?.getUser === 'function') {
+            const { data, error } = await supabase.auth.getUser()
+            if (!error && data?.user) {
+              existingUser = data.user
+            }
+          }
+        } catch (e) {
+          console.warn('No se pudo obtener usuario de Supabase en boot:', e)
+        }
+
+        // Si no hay sesión online, intentar modo local (mock_user)
+        if (!existingUser && typeof window !== 'undefined') {
+          try {
+            const rawMock = window.localStorage.getItem('mock_user')
+            if (rawMock) existingUser = JSON.parse(rawMock)
+          } catch (e) {
+            console.warn('No se pudo leer mock_user de localStorage:', e)
+          }
+        }
+
+        if (existingUser) {
+          if (typeof window !== 'undefined') {
+            window.localStorage.setItem('pref_last_activity_at', String(Date.now()))
+          }
+
+          // Restaurar la última vista usada por el usuario, o menú por defecto
+          let initialView = 'menu'
+          if (typeof window !== 'undefined') {
+            try {
+              const savedView = window.localStorage.getItem('pref_last_view')
+              if (savedView) initialView = savedView
+            } catch {
+              // ignore
+            }
+          }
+
+          setUser(existingUser)
+          setView(initialView)
+          console.log('✅ Sesión restaurada en boot con vista:', initialView)
+          return
         }
       } catch (e) {
-        console.warn('No se pudo configurar listener de autenticación:', e)
+        console.warn('Error restaurando sesión en boot:', e)
       }
+
+      // Si no hay sesión previa válida, mostrar login
+      setUser(null)
+      setView('login')
+      console.log('✅ Mostrando pantalla de login (sin sesión previa)')
     }
     boot()
   }, [])
@@ -219,6 +250,51 @@ export default function App() {
     setUser(null)
     setView('login')
   }
+
+  // Auto-logout por inactividad en tiempo de ejecución, según preferencias
+  useEffect(() => {
+    if (!user || typeof window === 'undefined') return
+
+    const prefs = PreferencesManager.getAll()
+    if (!prefs.autoLogoutEnabled) {
+      window.localStorage.removeItem('pref_last_activity_at')
+      return
+    }
+
+    const timeoutMs = (prefs.sessionTimeout || 30) * 60_000
+    const key = 'pref_last_activity_at'
+
+    const updateActivity = () => {
+      try {
+        window.localStorage.setItem(key, String(Date.now()))
+      } catch {
+        // ignore
+      }
+    }
+
+    updateActivity()
+
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll']
+    events.forEach((evt) => window.addEventListener(evt, updateActivity))
+
+    const intervalId = window.setInterval(() => {
+      try {
+        const rawLast = window.localStorage.getItem(key)
+        const last = rawLast ? parseInt(rawLast, 10) || 0 : 0
+        if (last && Date.now() - last > timeoutMs) {
+          console.log('⏰ Cerrando sesión por inactividad (runtime)')
+          handleLogout()
+        }
+      } catch {
+        // ignore
+      }
+    }, 30_000)
+
+    return () => {
+      events.forEach((evt) => window.removeEventListener(evt, updateActivity))
+      window.clearInterval(intervalId)
+    }
+  }, [user])
 
   useEffect(() => {
     if (!user || typeof window === 'undefined') return
@@ -279,9 +355,24 @@ export default function App() {
 
   if (view === 'reset') return <ResetPassword onDone={() => setView('login')} />
   
-  // ⚠️ DEBUG: Revisar por qué no entra en Login
-  if (!user || view === 'login') {
-    console.log('✅ Renderizando Login - user:', user, 'view:', view)
+  // Pantalla de carga mientras se restaura la sesión en boot
+  if (view === 'boot') {
+    return (
+      <div className="min-h-screen w-full flex flex-col items-center justify-center bg-white dark:bg-neutral-900 text-gray-900 dark:text-gray-100">
+        <div className="w-[320px] max-w-[90vw] bg-gray-100 dark:bg-neutral-800 rounded-xl shadow-md border border-gray-200 dark:border-neutral-700 p-6 flex flex-col items-center gap-4">
+          <div className="w-16 h-8 bg-black rounded-full flex items-center justify-center text-white text-sm font-semibold">
+            Trendo
+          </div>
+          <div className="w-6 h-6 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm text-gray-600 dark:text-gray-400 text-center">
+            Restaurando tu sesión...
+          </p>
+        </div>
+      </div>
+    )
+  }
+  
+  if (!user && view === 'login') {
     return <Login onAuthenticated={handleAuthenticated} initialInfo={authMessage} />
   }
   
