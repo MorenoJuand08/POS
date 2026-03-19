@@ -30,6 +30,9 @@
     "postcss": "^8.4.47",
     "prettier": "^3.3.3",
     "tailwindcss": "^3.4.13",
-    "vite": "^5.4.8"
+    "vite": "^5.4.8",
+    "electron": "^30.0.0",
+    "electron-vite": "^2.0.0",
+    "electron-builder": "^24.0.0"
   }
 }
