@@ -391,7 +391,11 @@ export async function pushSalesToCloud() {
   const toUpsert = dirty
     .filter((sale) => !sale.deleted)
     .map(sale => {
-      const mapped = mapSaleLocalToCloud(sale)
+      const mapped = {
+        ...mapSaleLocalToCloud(sale),
+        // Identificador estable para hacer el upsert idempotente en Supabase
+        local_sale_id: sale.id
+      }
       console.log('📤 Venta a sincronizar:', {
         id: sale.id,
         total: sale.total,
@@ -405,10 +409,10 @@ export async function pushSalesToCloud() {
 
   if (toUpsert.length) {
     try {
-      console.log(`📨 Insertando ${toUpsert.length} venta(s) en Supabase...`)
+      console.log(`📨 Insertando/actualizando ${toUpsert.length} venta(s) en Supabase...`)
       const { data, error } = await supabase
         .from('sale')
-        .insert(toUpsert)
+        .upsert(toUpsert, { onConflict: 'local_sale_id' })
       if (error) {
         console.error('❌ Error de Supabase:', error)
         throw error
