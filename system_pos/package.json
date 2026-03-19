@@ -1,5 +1,5 @@
 {
-  "name": "trendo-pos-desktop",
+  "name": "system_pos",
   "version": "0.1.0",
   "description": "Trendo POS web app (React + Tailwind, JS only) with Supabase and offline-first sync.",
   "private": true,

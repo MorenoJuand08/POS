@@ -17,7 +17,7 @@ import {
 
 // ⏱️ THROTTLE: Evitar que syncAll se ejecute demasiadas veces
 let lastSyncTime = 0
-const SYNC_THROTTLE_MS = 60_000 // Esperar 60 segundos entre syncs completos
+const SYNC_THROTTLE_MS = 45_000 // Esperar 45 segundos entre syncs completos
 let isSyncing = false
 
 const SUPABASE_SCHEMA = 'public'

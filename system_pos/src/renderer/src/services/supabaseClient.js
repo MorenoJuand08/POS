@@ -1,9 +1,17 @@
 import { createClient } from '@supabase/supabase-js'
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
-const SUPABASE_PUBLISHABLE_KEY =
+// 1) Leemos variables de entorno (si Vite las expone)
+const RAW_SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL?.trim()
+const RAW_SUPABASE_PUBLISHABLE_KEY = (
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY ||
   import.meta.env.VITE_SUPABASE_ANON_KEY
+)?.trim()
+
+// 2) Fallback seguro: usamos los valores conocidos de tu proyecto
+//    Esto garantiza que aunque Vite no cargue el .env por algún motivo,
+//    la app siga conectando a tu instancia de Supabase.
+const SUPABASE_URL = RAW_SUPABASE_URL || 'https://fyoeagmtnbgtosyobgmz.supabase.co'
+const SUPABASE_PUBLISHABLE_KEY = RAW_SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_wVU7HW6SYpRldpN2hryGrg_EzgH5cuh'
 
 const USE_LOCAL_ONLY = import.meta.env.VITE_USE_LOCAL_ONLY === 'true'
 const HAS_SUPABASE_CONFIG = Boolean(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY)

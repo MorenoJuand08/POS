@@ -45,12 +45,15 @@ function useNowString() {
 function ConnectionBar() {
   const online = useOnline()
   const hasSupabase = isSupabaseAvailable()
-  const connected = online && hasSupabase
+  // Consideramos "Conectado" cuando Supabase está configurado y activo.
+  // El estado de red del navegador puede fluctuar, pero no debe marcar la app como desconectada
+  // mientras la nube esté correctamente configurada.
+  const connected = hasSupabase
   const dateLabel = useNowString()
   return (
     <div className="mx-auto mt-4 w-[560px] max-w-[92vw] rounded-xl border bg-[#f8fafc] text-gray-800 shadow-md flex items-center justify-between px-5 py-3 dark:bg-neutral-800 dark:text-gray-200 dark:border-neutral-700">
       <div className="flex items-center gap-3">
-        <WifiIcon className={connected ? 'w-4 h-4 text-green-600 dark:text-green-300' : 'w-4 h-4 text-red-600 dark:text-red-400'} />
+        <WifiIcon className={online ? 'w-4 h-4 text-green-600 dark:text-green-300' : 'w-4 h-4 text-red-600 dark:text-red-400'} />
         <CloudIcon className={connected ? 'w-4 h-4 text-green-600 dark:text-green-300' : 'w-4 h-4 text-red-600 dark:text-red-400'} />
         <span className={connected ? 'font-medium text-green-700 dark:text-green-300' : 'font-medium text-red-600 dark:text-red-400'}>
           {connected ? 'Conectado' : 'Desconectado'}
