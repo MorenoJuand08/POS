@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { supabase } from '@/services/supabaseClient'
+import { supabase, isSupabaseAvailable } from '@/services/supabaseClient'
 
 export function IconBox({ type }) {
   const common = 'w-4 h-4 stroke-current'
@@ -35,10 +35,13 @@ export default function SidebarCaja({ onNavigate, currentView, onLogout }) {
   useEffect(() => {
     async function loadUser() {
       try {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (user) {
-          setUser(user)
+        // Si Supabase está en modo local o no expone auth, no intentamos cargar usuario
+        if (!isSupabaseAvailable() || !supabase.auth || typeof supabase.auth.getUser !== 'function') {
+          return
         }
+
+        const { data } = await supabase.auth.getUser()
+        if (data && data.user) setUser(data.user)
       } catch (err) {
         console.warn('Error loading user:', err)
       }

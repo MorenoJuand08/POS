@@ -1,4 +1,4 @@
-import { supabase } from './supabaseClient'
+import { supabase, isSupabaseAvailable } from './supabaseClient'
 import {
   getDirty,
   markClean,
@@ -268,16 +268,12 @@ function remoteTable() {
 }
 
 export async function pullFromCloud() {
-  // ⏸️ DESACTIVADO EN MODO LOCAL
+  // De momento mantenemos el pull de catálogo desactivado
+  // para evitar sobreescribir datos locales inesperadamente.
+  // La sincronización principal se realiza vía push hacia Supabase.
   return 0
 }
 
-export async function pushToCloud() {
-  // ⏸️ DESACTIVADO EN MODO LOCAL
-  return 0
-}
-
-/* PUSH A SUPABASE - COMENTARIZADA
 export async function pushToCloud() {
   try {
     const dirty = await getDirty()
@@ -341,7 +337,6 @@ export async function pushToCloud() {
     return 0
   }
 }
-*/
 
 function remoteCustomerTable() {
   return supabase.schema(SUPABASE_SCHEMA).from(CUSTOMER_TABLE)
@@ -352,12 +347,6 @@ export async function pullCustomersFromCloud() {
   return 0
 }
 
-export async function pushCustomersToCloud() {
-  // ⏸️ DESACTIVADO EN MODO LOCAL
-  return 0
-}
-
-/* PUSH CUSTOMERS A SUPABASE - COMENTARIZADA
 export async function pushCustomersToCloud() {
   const dirty = await getDirtyCustomers()
   console.log('🔍 Clientes sucios encontrados:', dirty.length)
@@ -390,14 +379,7 @@ export async function pushCustomersToCloud() {
   await markCustomersClean(dirty.map((customer) => customer.id))
   return dirty.length
 }
-*/
 
-export async function pushSalesToCloud() {
-  // ⏸️ DESACTIVADO EN MODO LOCAL
-  return 0
-}
-
-/* PUSH SALES A SUPABASE - COMENTARIZADA
 export async function pushSalesToCloud() {
   const dirty = await getDirtySales()
   console.log('🔍 Ventas sucias encontradas:', dirty.length)
@@ -409,7 +391,11 @@ export async function pushSalesToCloud() {
   const toUpsert = dirty
     .filter((sale) => !sale.deleted)
     .map(sale => {
-      const mapped = mapSaleLocalToCloud(sale)
+      const mapped = {
+        ...mapSaleLocalToCloud(sale),
+        // Identificador estable para hacer el upsert idempotente en Supabase
+        local_sale_id: sale.id
+      }
       console.log('📤 Venta a sincronizar:', {
         id: sale.id,
         total: sale.total,
@@ -423,10 +409,10 @@ export async function pushSalesToCloud() {
 
   if (toUpsert.length) {
     try {
-      console.log(`📨 Insertando ${toUpsert.length} venta(s) en Supabase...`)
+      console.log(`📨 Insertando/actualizando ${toUpsert.length} venta(s) en Supabase...`)
       const { data, error } = await supabase
         .from('sale')
-        .insert(toUpsert)
+        .upsert(toUpsert, { onConflict: 'local_sale_id' })
       if (error) {
         console.error('❌ Error de Supabase:', error)
         throw error
@@ -441,18 +427,15 @@ export async function pushSalesToCloud() {
   await markSalesClean(dirty.map((sale) => sale.id))
   return dirty.length
 }
-*/
 
 export async function syncAll() {
-  // ⏸️ MODO LOCAL: Todas las sincronizaciones con Supabase están desactivadas
-  // El software funciona completamente en modo offline/local
-  // Los datos se guardan solo en IndexedDB (local)
-  console.log('⏸️ Supabase sync desactivado - Modo LOCAL')
-  return
-}
+  // Si Supabase no está disponible o estamos en modo local forzado,
+  // mantenemos el comportamiento anterior y no sincronizamos.
+  if (!isSupabaseAvailable()) {
+    console.log('⏸️ Supabase sync desactivado - Modo LOCAL')
+    return
+  }
 
-/* SINCRONIZACIÓN A SUPABASE - COMENTARIZADA
-export async function syncAll() {
   const now = Date.now()
   const timeSinceLastSync = now - lastSyncTime
   
@@ -509,7 +492,6 @@ export async function syncAll() {
   console.log('✅ Ciclo de sincronización completado')
   isSyncing = false
 }
-*/
 
 export async function purgeLegacyItems() {
   const all = await db.items.toArray()
