@@ -1,5 +1,5 @@
 # SISTEMA_POS 
-( * Sistema de Punto de Venta * )
+( Sistema de Punto de Venta )
 
 Trendo POS es software para la gestión de inventario y ventas en tiendas de moda. Permite controlar stock por tallas, registrar ventas en caja, generar reportes contables y trabajar incluso sin conexión, sincronizando los datos con la nube cuando vuelve el internet.
 
