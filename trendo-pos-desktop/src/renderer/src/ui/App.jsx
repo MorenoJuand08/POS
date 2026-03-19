@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import Login from './Login'
-import ChatWindow from './ChatWindow'
 import Menu from './Menu'
 import Inventory from './inventario/Inventory'
 import ControlStock from './inventario/ControlStock'
@@ -21,7 +20,6 @@ export default function App() {
   const [user, setUser] = useState(null)
   const [view, setView] = useState('loading') // 'login' | 'menu' | 'inventory' | 'cash' | 'invoice-progress'
   const [authMessage, setAuthMessage] = useState('')
-  const [showChatbot, setShowChatbot] = useState(false)
   const [invoiceData, setInvoiceData] = useState(null) // Datos para InvoiceProgress
   
   // Ejecutar migración de campos size en bills históricos al inicio
@@ -268,22 +266,6 @@ export default function App() {
           onLogout={handleLogout}
           user={user}
         />
-      )}
-      
-      {/* Chatbot flotante disponible en todas las vistas */}
-      {showChatbot && <ChatWindow onClose={() => setShowChatbot(false)} />}
-      
-      {/* Botón para abrir chatbot si no está visible */}
-      {!showChatbot && user && view !== 'login' && (
-        <button
-          onClick={() => setShowChatbot(true)}
-          className="fixed bottom-6 right-6 z-40 bg-blue-600 hover:bg-blue-700 text-white rounded-full p-4 shadow-lg transition-all hover:shadow-xl"
-          title="Abrir Asistente IA"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
-            <path d="M12 2C6.48 2 2 6.48 2 12c0 1.54.36 3 .97 4.29L2 22l6.29-.97C9.23 21.62 10.6 22 12 22c5.52 0 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
-          </svg>
-        </button>
       )}
     </>
   )
