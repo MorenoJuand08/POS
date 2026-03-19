@@ -1,4 +1,4 @@
-import { supabase } from './supabaseClient'
+import { supabase, isSupabaseAvailable } from './supabaseClient'
 import {
   getDirty,
   markClean,
@@ -268,16 +268,12 @@ function remoteTable() {
 }
 
 export async function pullFromCloud() {
-  // ⏸️ DESACTIVADO EN MODO LOCAL
+  // De momento mantenemos el pull de catálogo desactivado
+  // para evitar sobreescribir datos locales inesperadamente.
+  // La sincronización principal se realiza vía push hacia Supabase.
   return 0
 }
 
-export async function pushToCloud() {
-  // ⏸️ DESACTIVADO EN MODO LOCAL
-  return 0
-}
-
-/* PUSH A SUPABASE - COMENTARIZADA
 export async function pushToCloud() {
   try {
     const dirty = await getDirty()
@@ -341,7 +337,6 @@ export async function pushToCloud() {
     return 0
   }
 }
-*/
 
 function remoteCustomerTable() {
   return supabase.schema(SUPABASE_SCHEMA).from(CUSTOMER_TABLE)
@@ -352,12 +347,6 @@ export async function pullCustomersFromCloud() {
   return 0
 }
 
-export async function pushCustomersToCloud() {
-  // ⏸️ DESACTIVADO EN MODO LOCAL
-  return 0
-}
-
-/* PUSH CUSTOMERS A SUPABASE - COMENTARIZADA
 export async function pushCustomersToCloud() {
   const dirty = await getDirtyCustomers()
   console.log('🔍 Clientes sucios encontrados:', dirty.length)
@@ -390,14 +379,7 @@ export async function pushCustomersToCloud() {
   await markCustomersClean(dirty.map((customer) => customer.id))
   return dirty.length
 }
-*/
 
-export async function pushSalesToCloud() {
-  // ⏸️ DESACTIVADO EN MODO LOCAL
-  return 0
-}
-
-/* PUSH SALES A SUPABASE - COMENTARIZADA
 export async function pushSalesToCloud() {
   const dirty = await getDirtySales()
   console.log('🔍 Ventas sucias encontradas:', dirty.length)
@@ -441,18 +423,15 @@ export async function pushSalesToCloud() {
   await markSalesClean(dirty.map((sale) => sale.id))
   return dirty.length
 }
-*/
 
 export async function syncAll() {
-  // ⏸️ MODO LOCAL: Todas las sincronizaciones con Supabase están desactivadas
-  // El software funciona completamente en modo offline/local
-  // Los datos se guardan solo en IndexedDB (local)
-  console.log('⏸️ Supabase sync desactivado - Modo LOCAL')
-  return
-}
+  // Si Supabase no está disponible o estamos en modo local forzado,
+  // mantenemos el comportamiento anterior y no sincronizamos.
+  if (!isSupabaseAvailable()) {
+    console.log('⏸️ Supabase sync desactivado - Modo LOCAL')
+    return
+  }
 
-/* SINCRONIZACIÓN A SUPABASE - COMENTARIZADA
-export async function syncAll() {
   const now = Date.now()
   const timeSinceLastSync = now - lastSyncTime
   
@@ -509,7 +488,6 @@ export async function syncAll() {
   console.log('✅ Ciclo de sincronización completado')
   isSyncing = false
 }
-*/
 
 export async function purgeLegacyItems() {
   const all = await db.items.toArray()

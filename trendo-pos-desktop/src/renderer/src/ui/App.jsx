@@ -18,7 +18,7 @@ import ResetPassword from './ResetPassword'
 
 export default function App() {
   const [user, setUser] = useState(null)
-  const [view, setView] = useState('loading') // 'login' | 'menu' | 'inventory' | 'cash' | 'invoice-progress'
+  const [view, setView] = useState('login') // 'login' | 'menu' | 'inventory' | 'cash' | 'invoice-progress' | 'reset' | 'verified'
   const [authMessage, setAuthMessage] = useState('')
   const [invoiceData, setInvoiceData] = useState(null) // Datos para InvoiceProgress
   
@@ -100,7 +100,7 @@ export default function App() {
         console.warn('No se pudo limpiar sesión local:', e)
       }
 
-      // First: check URL for recovery / error params and handle them before session check
+      // First: check URL for recovery / verification / error params and handle them before session check
       try {
         if (typeof window !== 'undefined') {
           const href = window.location.href
@@ -113,6 +113,7 @@ export default function App() {
           const refresh_token = params.get('refresh_token') || url.searchParams.get('refresh_token')
           const error = params.get('error') || url.searchParams.get('error')
           const error_description = params.get('error_description') || url.searchParams.get('error_description')
+          // 1) Cualquier error en el enlace
           if (error || error_description) {
             const msg = decodeURIComponent(error_description || error || '')
             setAuthMessage(msg || 'Error al procesar el enlace de recuperación')
@@ -121,7 +122,8 @@ export default function App() {
             try { window.history.replaceState({}, document.title, window.location.pathname + window.location.search) } catch {}
             return
           }
-          if (type === 'recovery' || access_token) {
+          // 2) Recuperación de contraseña
+          if (type === 'recovery') {
             try {
               if (access_token && typeof supabase?.auth?.setSession === 'function') {
                 await supabase.auth.setSession({ access_token, refresh_token })
@@ -130,6 +132,32 @@ export default function App() {
               console.warn('No se pudo establecer la sesión desde el enlace de recuperación', e)
             }
             setView('reset')
+            try { window.history.replaceState({}, document.title, window.location.pathname + window.location.search) } catch {}
+            return
+          }
+
+          // 3) Confirmación de correo / verificación de usuario (signup, invite, magiclink, email_change)
+          if (type === 'signup' || type === 'invite' || type === 'magiclink' || type === 'email_change') {
+            try {
+              if (access_token && typeof supabase?.auth?.setSession === 'function') {
+                await supabase.auth.setSession({ access_token, refresh_token })
+              }
+            } catch (e) {
+              console.warn('No se pudo establecer la sesión desde el enlace de verificación', e)
+            } finally {
+              // Por seguridad, no mantenemos la sesión abierta automáticamente
+              try {
+                if (typeof supabase?.auth?.signOut === 'function') {
+                  await supabase.auth.signOut()
+                }
+              } catch (e) {
+                console.warn('No se pudo cerrar sesión tras verificación:', e)
+              }
+            }
+
+            setAuthMessage('Usuario verificado correctamente. Ahora puedes iniciar sesión con tu correo y contraseña.')
+            setUser(null)
+            setView('verified')
             try { window.history.replaceState({}, document.title, window.location.pathname + window.location.search) } catch {}
             return
           }
@@ -221,7 +249,34 @@ export default function App() {
     }
   }, [user])
 
-  if (view === 'loading') return null
+  if (view === 'verified') {
+    return (
+      <div className="min-h-screen w-full flex flex-col items-center justify-center bg-white dark:bg-neutral-900 text-gray-900 dark:text-gray-100 transition-colors">
+        <div className="w-[460px] max-w-[92vw] bg-gray-100 dark:bg-neutral-800 text-gray-900 dark:text-gray-100 rounded-xl shadow-lg border border-gray-200 dark:border-neutral-700 p-8">
+          <h1 className="text-2xl font-semibold text-center mb-4">Usuario verificado correctamente</h1>
+          <p className="text-sm text-gray-700 dark:text-gray-300 mb-6 text-center">
+            Tu correo ha sido confirmado. Ahora puedes iniciar sesión con tus credenciales para entrar al sistema.
+          </p>
+          {authMessage && (
+            <div className="mb-4 text-sm text-green-700 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded p-3 text-center">
+              {authMessage}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              setAuthMessage('')
+              setView('login')
+            }}
+            className="w-full inline-flex justify-center items-center px-4 py-2 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-medium shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          >
+            Volver al login
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   if (view === 'reset') return <ResetPassword onDone={() => setView('login')} />
   
   // ⚠️ DEBUG: Revisar por qué no entra en Login
@@ -230,7 +285,7 @@ export default function App() {
     return <Login onAuthenticated={handleAuthenticated} initialInfo={authMessage} />
   }
   
-  console.log('❌ RENDERIZANDO MENU CON USER:', user?.email || user, '- VIEW:', view)
+  console.log('✅ Renderizando menú con user:', user?.email || user, '- VIEW:', view)
   
   return (
     <>

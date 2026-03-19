@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { onConnectivityChange } from '@/services/sync'
 import { loginWithEmail, registerWithEmail, VALID_ROLES, sendPasswordRecovery, resetPasswordWithToken } from '@/services/authLogin'
 import { syncSingleAuthUserToEmployee } from '@/services/employees'
+import { isSupabaseAvailable } from '@/services/supabaseClient'
 
 function WifiIcon({ className = 'w-4 h-4' }) {
   return (
@@ -43,14 +44,16 @@ function useNowString() {
 
 function ConnectionBar() {
   const online = useOnline()
+  const hasSupabase = isSupabaseAvailable()
+  const connected = online && hasSupabase
   const dateLabel = useNowString()
   return (
     <div className="mx-auto mt-4 w-[560px] max-w-[92vw] rounded-xl border bg-[#f8fafc] text-gray-800 shadow-md flex items-center justify-between px-5 py-3 dark:bg-neutral-800 dark:text-gray-200 dark:border-neutral-700">
       <div className="flex items-center gap-3">
-        <WifiIcon className={online ? 'w-4 h-4 text-green-600 dark:text-green-300' : 'w-4 h-4 text-red-600 dark:text-red-400'} />
-        <CloudIcon className={online ? 'w-4 h-4 text-green-600 dark:text-green-300' : 'w-4 h-4 text-red-600 dark:text-red-400'} />
-        <span className={online ? 'font-medium text-green-700 dark:text-green-300' : 'font-medium text-red-600 dark:text-red-400'}>
-          {online ? 'Conectado' : 'Desconectado'}
+        <WifiIcon className={connected ? 'w-4 h-4 text-green-600 dark:text-green-300' : 'w-4 h-4 text-red-600 dark:text-red-400'} />
+        <CloudIcon className={connected ? 'w-4 h-4 text-green-600 dark:text-green-300' : 'w-4 h-4 text-red-600 dark:text-red-400'} />
+        <span className={connected ? 'font-medium text-green-700 dark:text-green-300' : 'font-medium text-red-600 dark:text-red-400'}>
+          {connected ? 'Conectado' : 'Desconectado'}
         </span>
       </div>
       <div className="text-sm text-gray-500 dark:text-gray-400">{dateLabel}</div>
